@@ -7,7 +7,8 @@ import pytest
 from google.genai import Client as GenaiClient, errors
 
 from app.config import Settings
-from app.schemas import AppError, GuardrailResult, KnowledgeAnswer, RouteDecision, ToolDecision
+from app.schemas import AppError, ExecutionPlan, GuardrailResult, KnowledgeAnswer, RouteDecision, ToolDecision
+from evals.quality import JudgeResult
 from app.services.gemini import Gemini
 from app.tools.web_search import web_search
 
@@ -42,6 +43,8 @@ def test_gemini_uses_env_configuration_and_structured_json(monkeypatch):
     (RouteDecision, '{"route":"knowledge_web"}'),
     (ToolDecision, '{"tools":["get_customer_activity"]}'),
     (KnowledgeAnswer, '{"sufficient_context":true,"answer":"Grounded answer."}'),
+    (ExecutionPlan, '{"agents":["customer_support","knowledge_getnet"],"needs_synthesis":true}'),
+    (JudgeResult, '{"groundedness":5,"relevance":5,"correctness":5,"unsupported_claims":[],"pass":true}'),
     (None, "A grounded answer."),
 ])
 def test_real_sdk_serializes_supported_json_schema_without_network(monkeypatch, schema, answer):

@@ -19,7 +19,7 @@ def test_human_escalation_is_deterministic(reason):
     assert first.escalation_reason == reason
     assert first.agents_used == ["human_escalation"]
     assert first.tools_used == []
-    assert "simulado" in first.answer
+    assert "externo" in first.answer
 
 
 def test_escalation_keeps_executed_steps():
@@ -90,7 +90,7 @@ def test_customer_data_failure_keeps_only_attempted_tools(settings, gemini):
 
 def test_router_exception_escalates(client, router, gemini, monkeypatch):
     gemini.generate.return_value = SUPPORTED
-    monkeypatch.setattr(router, "classify", lambda message: (_ for _ in ()).throw(RuntimeError("private")))
+    monkeypatch.setattr(router, "plan", lambda message, context: (_ for _ in ()).throw(RuntimeError("private")))
     body = client.post("/chat", json={"message": "Getnet", "user_id": "x"}).json()
     assert body["escalation_reason"] == "routing_failure"
     assert "private" not in body["answer"]

@@ -3,7 +3,7 @@ from app.schemas import ChatResponse, EscalationReason
 
 
 class HumanEscalationAgent:
-    """Deterministic handoff recommendation; no ticket or human contact is created."""
+    """Signal an interruption. The orchestrator persists the local handoff."""
 
     @staticmethod
     def handle(
@@ -18,8 +18,8 @@ class HumanEscalationAgent:
         log_event("request_escalated", escalation_reason=reason)
         return ChatResponse(
             answer="Não consegui resolver esta solicitação com segurança. "
-                   "O caso deve ser encaminhado para atendimento humano. "
-                   "Este encaminhamento é simulado; nenhum atendente foi acionado.",
+                   "A conversa aguarda revisão humana local. "
+                   "Nenhum atendente externo foi acionado.",
             status="escalated", escalation_reason=reason,
             agents_used=list(dict.fromkeys([*(agents_used or []), "human_escalation"])),
             tools_used=tools_used or [], sources=sources or [],

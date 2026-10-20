@@ -18,7 +18,7 @@ def test_case_catalog_covers_required_behaviors():
         "knowledge_getnet", "knowledge_web", "customer_support", None
     }
     assert {case.expected_guardrail for case in cases} == {"supported", "sensitive", "unsafe", "irrelevant"}
-    assert any(case.expected_status == "escalated" for case in cases)
+    assert any(case.expected_status == "awaiting_human" for case in cases)
 
 
 def test_evaluation_reports_pass_and_failure_without_grading_text(capsys):
@@ -98,3 +98,15 @@ def test_comparison_evaluation_requires_both_product_sources(sources, passed):
             "tools_used": ["getnet_rag"], "sources": sources}
     with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))) as client:
         assert evaluate_case(case, client, "http://test")["passed"] is passed
+
+
+def test_required_tools_allow_additional_relevant_tools_but_blocked_cases_allow_none():
+    case = EvaluationCase(name="mixed", message="My terminal", user_id="a",
+                          expected_route="customer_support", expected_tools=["get_customer_activity"])
+    body = {"request_id":str(uuid4()), "route":"customer_support", "guardrail_category":"supported",
+            "status":"answered", "agents_used":["router","customer_support"],
+            "tools_used":["get_customer_activity","get_customer_profile"], "sources":[]}
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))) as client:
+        assert evaluate_case(case, client, "http://test")["passed"]
+        case.expected_tools = []
+        assert not evaluate_case(case, client, "http://test")["passed"]

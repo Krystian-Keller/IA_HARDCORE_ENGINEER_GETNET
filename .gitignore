@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 data/rag/*.json
 data/rag/*.tmp
+data/*.db
+data/*.db-*

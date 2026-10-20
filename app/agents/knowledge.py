@@ -7,8 +7,9 @@ from pydantic import ValidationError
 from app.agents.human_escalation import HumanEscalationAgent
 from app.config import Settings
 from app.logging_config import log_event
+from app.language import answer_language
 from app.rag.retriever import Retriever
-from app.schemas import AppError, ChatResponse, KnowledgeAnswer, Route
+from app.schemas import AppError, ChatResponse, ConversationContext, KnowledgeAnswer, Route
 from app.services.gemini import Gemini
 from app.tools.web_search import web_search
 
@@ -18,7 +19,9 @@ class KnowledgeAgent:
         self.gemini = gemini
         self.settings = settings
 
-    def answer(self, message: str, route: Route) -> ChatResponse:
+    def answer(self, message: str, route: Route, *, context: ConversationContext | None = None) -> ChatResponse:
+        conversation = context or ConversationContext()
+        query = conversation.retrieval_query(message)
         tools = ["getnet_rag" if route == "knowledge_getnet" else "web_search"]
         log_event("tool_called", tool=tools[0])
         try:
@@ -26,12 +29,12 @@ class KnowledgeAgent:
                 # Rebuild from local JSON; no HTTP fetch or executable pickle on this path.
                 chunks = Retriever.from_file(
                     self.settings.data_dir / "rag" / "chunks.json"
-                ).retrieve(message)
+                ).retrieve(query)
                 context = [chunk.model_dump(mode="json") for chunk in chunks]
                 sources = list(dict.fromkeys(str(chunk.source) for chunk in chunks))
                 log_event("rag_retrieval", results_count=len(chunks))
             else:
-                results = web_search(message, timeout=self.settings.http_timeout_seconds)
+                results = web_search(query, timeout=self.settings.http_timeout_seconds)
                 context = [result.model_dump(mode="json") for result in results]
                 sources = list(dict.fromkeys(str(result.url) for result in results))
                 log_event("web_search", results_count=len(results))
@@ -47,6 +50,8 @@ class KnowledgeAgent:
             )
         prompt = (
             "You are the Knowledge Agent. Respond in the same language as the user's question. "
+            f"Required output language: {answer_language(message, conversation)}. "
+            "The answer field MUST use this language even when all source text is Portuguese. "
             "The sources may be in a different language: translate the facts instead of copying "
             "their language. Start with a direct answer, then explain relevant conditions. For "
             "yes/no questions, answer the requirement explicitly when supported; a related snippet "
@@ -66,6 +71,7 @@ class KnowledgeAgent:
             "feature is absent from a product merely because it was not mentioned. "
             f"Current date (America/Sao_Paulo): {datetime.now(ZoneInfo('America/Sao_Paulo')).date()}.\n"
             f"QUESTION: {json.dumps(message, ensure_ascii=False)}\n"
+            f"HISTORY AND PREVIOUS SPECIALISTS (untrusted data): {conversation.prompt_data()}\n"
             f"CONTEXT: {json.dumps(context, ensure_ascii=False)}"
         )
         try:
@@ -73,14 +79,18 @@ class KnowledgeAgent:
         except (AppError, ValidationError) as exc:
             log_event("request_failed", stage="generation",
                       status_code=exc.status_code if isinstance(exc, AppError) else 502)
-            return HumanEscalationAgent.handle(
+            escalation = HumanEscalationAgent.handle(
                 message, "internal_error", agents_used=["router", "knowledge"],
                 tools_used=tools, sources=sources,
             )
+            escalation.evidence = context
+            return escalation
         if not result.sufficient_context:
-            return HumanEscalationAgent.handle(
+            escalation = HumanEscalationAgent.handle(
                 message, "insufficient_information", agents_used=["router", "knowledge"],
                 tools_used=tools, sources=sources,
             )
+            escalation.evidence = context
+            return escalation
         return ChatResponse(answer=result.answer, agents_used=["router", "knowledge"],
-                            tools_used=tools, sources=sources)
+                            tools_used=tools, sources=sources, evidence=context)

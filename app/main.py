@@ -1,7 +1,8 @@
+import sqlite3
 from functools import lru_cache
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -11,8 +12,10 @@ from app.agents.human_escalation import HumanEscalationAgent
 from app.agents.knowledge import KnowledgeAgent
 from app.agents.router import RouterAgent
 from app.config import Settings
+from app.identity import authorize_reviewer, authorize_user
 from app.logging_config import configure_logging, log_event, request_id_context
-from app.schemas import AppError, ChatRequest, ChatResponse
+from app.rag.retriever import Retriever
+from app.schemas import AppError, ChatRequest, ChatResponse, HandoffReply
 from app.services.gemini import Gemini
 
 configure_logging()
@@ -73,7 +76,36 @@ def health() -> dict[str, str]:
 
 
 @app.post("/chat", response_model=ChatResponse, response_model_exclude_none=True)
-def chat(request: ChatRequest, router: RouterAgent = Depends(get_router)) -> ChatResponse:
+def chat(request: ChatRequest, router: RouterAgent = Depends(get_router),
+         x_api_key: str | None = Header(default=None)) -> ChatResponse:
+    authorize_user(router.settings, request.user_id, x_api_key)
     result = router.chat(request)
     result.request_id = request_id_context.get()
     return result
+
+
+@app.post("/handoffs/{handoff_id}/reply", response_model=ChatResponse, response_model_exclude_none=True)
+def reply_handoff(handoff_id: UUID, reply: HandoffReply, router: RouterAgent = Depends(get_router),
+                  x_reviewer_key: str | None = Header(default=None)) -> ChatResponse:
+    authorize_reviewer(router.settings, x_reviewer_key)
+    result = router.resume(str(handoff_id), reply)
+    result.request_id = request_id_context.get()
+    return result
+
+
+@app.get("/ready")
+def ready(router: RouterAgent = Depends(get_router)) -> JSONResponse:
+    resources = {"conversation_database": "available", "rag_index": "available",
+                 "gemini_configuration": "configured" if router.settings.gemini_api_key.get_secret_value()
+                 else "missing", "gemini_connectivity": "not_checked"}
+    try:
+        router.store.check()
+    except (sqlite3.Error, OSError):
+        resources["conversation_database"] = "missing"
+    try:
+        Retriever.from_file(router.settings.data_dir / "rag" / "chunks.json")
+    except AppError:
+        resources["rag_index"] = "missing"
+    available = "missing" not in resources.values()
+    return JSONResponse(status_code=200 if available else 503,
+                        content={"status": "ready" if available else "not_ready", "resources": resources})

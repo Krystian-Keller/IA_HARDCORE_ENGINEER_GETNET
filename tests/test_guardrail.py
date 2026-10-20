@@ -29,7 +29,7 @@ def test_blocked_guardrail_does_not_reach_router_or_tools(client, gemini, catego
     response = client.post("/chat", json={"message": "Blocked request", "user_id": "cliente1988"})
     body = response.json()
     assert response.status_code == 200
-    assert body["status"] == "escalated"
+    assert body["status"] == "awaiting_human"
     assert body["escalation_reason"] == f"{category}_request"
     assert body["guardrail_category"] == category
     assert body["agents_used"] == ["human_escalation"]
@@ -41,6 +41,6 @@ def test_blocked_guardrail_does_not_reach_router_or_tools(client, gemini, catego
 def test_invalid_guardrail_cannot_dispatch(client, gemini):
     gemini.generate.return_value = "invalid JSON"
     body = client.post("/chat", json={"message": "Hello", "user_id": "x"}).json()
-    assert body["status"] == "escalated"
+    assert body["status"] == "awaiting_human"
     assert body["tools_used"] == []
     gemini.generate.assert_called_once()

@@ -122,7 +122,7 @@ def test_guardrail_dependency_failure_escalates(client, gemini, status):
     gemini.generate.side_effect = AppError(status, "Serviço indisponível")
     response = client.post("/chat", json={"message": "Hello", "user_id": "x"})
     assert response.status_code == 200
-    assert response.json()["status"] == "escalated"
+    assert response.json()["status"] == "awaiting_human"
     assert response.json()["escalation_reason"] == "internal_error"
     assert response.json()["agents_used"] == ["human_escalation"]
     assert UUID(response.json()["request_id"])
@@ -142,7 +142,7 @@ def test_nonempty_retrieval_does_not_make_abstention_an_answer(client, gemini, s
     response = client.post("/chat", json={"message": "Do I need a bank account for Pix?", "user_id": "x"})
     body = response.json()
     assert response.status_code == 200
-    assert body["status"] == "escalated"
+    assert body["status"] == "awaiting_human"
     assert body["escalation_reason"] == reason
     assert body["sources"] == [source]
     assert body["agents_used"] == ["router", "knowledge", "human_escalation"]
