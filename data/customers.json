@@ -1,0 +1,40 @@
+{
+  "cliente1988": {
+    "snapshot_at": "2026-10-15T09:00:00-03:00",
+    "profile": {
+      "name": "Marina Exemplo",
+      "business_name": "Café Demonstração",
+      "city": "Porto Alegre",
+      "account_status": "active",
+      "data_is_fictional": true
+    },
+    "receiving_configuration": {
+      "currency": "BRL",
+      "debit_settlement": "next_business_day",
+      "credit_settlement": "30_calendar_days",
+      "automatic_receivables_advance": false,
+      "pix_enabled": true,
+      "destination": "Conta demonstrativa final 1234"
+    },
+    "activity": {
+      "recent_sales": [
+        {"id": "demo-sale-001", "sold_at": "2026-10-14T14:20:00-03:00", "method": "debit", "gross_amount": 150.00, "net_amount": 147.75, "status": "approved", "expected_deposit_date": "2026-10-15"},
+        {"id": "demo-sale-002", "sold_at": "2026-10-14T16:45:00-03:00", "method": "credit", "gross_amount": 300.00, "net_amount": 291.00, "status": "approved", "expected_deposit_date": "2026-11-13"}
+      ],
+      "expected_deposits": [
+        {"date": "2026-10-15", "amount": 147.75, "currency": "BRL", "sale_ids": ["demo-sale-001"], "status": "scheduled"},
+        {"date": "2026-11-13", "amount": 291.00, "currency": "BRL", "sale_ids": ["demo-sale-002"], "status": "scheduled"}
+      ],
+      "device": {
+        "id": "demo-device-1988", "model": "Get Smart", "serial_number": "DEMO1988",
+        "status": "offline", "last_seen_at": "2026-10-14T18:00:00-03:00",
+        "connection": "Wi-Fi", "last_connection_error": "Wi-Fi network unavailable"
+      },
+      "last_transaction_error": {
+        "at": "2026-10-14T17:55:00-03:00", "code": "DEMO_DECLINED",
+        "message": "Transação de demonstração recusada; motivo detalhado não disponível.",
+        "amount": 89.90, "currency": "BRL"
+      }
+    }
+  }
+}
