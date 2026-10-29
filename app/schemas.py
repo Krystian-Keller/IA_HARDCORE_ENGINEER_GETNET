@@ -116,6 +116,9 @@ class SearchResult(BaseModel):
     title: NonEmptyText
     snippet: NonEmptyText
     url: HttpUrl
+    content: str = ""
+    retrieved_at: str | None = None
+    published_at: str | None = None
 
 
 class AppError(Exception):

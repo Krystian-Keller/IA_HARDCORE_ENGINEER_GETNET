@@ -101,7 +101,19 @@ URLs (configurable up to 20), including Brazilian product pages and global pages
 It extracts literal FAQ/technical-sheet widget text without executing JavaScript,
 expands common English search terms into Portuguese and preserves both product
 sources in comparisons. A total ingestion failure preserves the previous corpus.
-External questions retain DuckDuckGo snippet search. Retrieved text, tool results,
+External questions use DuckDuckGo search followed by bounded HTML retrieval of the first
+five valid results, with at most three concurrent downloads. Each page has a six-second retrieval budget, at most
+three redirects, a 750 KB download limit and a 12,000-character extracted-text limit.
+The agent receives snippets, page text, location metadata, source URLs and available
+publication/download timestamps. Download time does not establish forecast or quote
+freshness: the answer still needs values for the requested date and location.
+Failed, blocked, oversized or non-HTML pages retain their search snippets; they do not
+discard successful sources. No JavaScript is executed. Public destinations are validated
+at every redirect and connections pin the validated IP while retaining TLS hostname
+verification. Private/local addresses, credentials in URLs and nonstandard ports are rejected.
+This adds no Gemini call, dependency or API key. Some sites require JavaScript or block
+automated reading, so insufficient evidence can still require local review.
+Retrieved text, tool results,
 history and human notes are explicitly treated as untrusted data in prompts.
 
 Customer tools read `data/customers.json`, using the HTTP `user_id` directly; the LLM
@@ -193,6 +205,22 @@ docker compose exec api python -m evals.run
 docker compose exec api python -m evals.run --judge
 ```
 
+To retest web retrieval after a code change, rebuild the API and start a **new**
+conversation (omit `conversation_id`; an existing pending handoff remains pending):
+
+```bash
+docker compose up --build -d --force-recreate
+curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What is the weather forecast for Porto Alegre, Rio Grande do Sul, Brazil tomorrow?","user_id":"cliente1988"}'
+```
+
+Also retry the original shorter Porto Alegre question, its Portuguese version and the
+euro exchange-rate question. Check `status=answered`, `requires_human=false`, nonempty
+`sources`, the correct city/date, units and consistency with the cited page. For currency,
+the answer must name the currency pair and distinguish an indicative quote from a bank's
+buy/sell rate. A page title alone is not enough evidence. Logs now include `pages_loaded`
+alongside the number of search results; page content remains internal evidence.
+
 `evals/cases.json` contains 17 cases: the original ten, customer profile, four guardrail
 cases and two mixed support/knowledge requests (repair and product comparison).
 Cases declare required tools/routes/agents/sources and optional required concept groups,
@@ -246,20 +274,4 @@ or `504` (timeout). A failed reviewer generation returns the corresponding error
 preserving the pending handoff and note. Validation returns `422`; unexpected internal
 failures return `500` and cannot guarantee persistence if local storage itself failed.
 
-## Limitations and design decisions
 
-- SQLite and explicit Python calls fit a single local demonstration. No ORM, external
-  database, queue, vector database or autonomous planner is needed for these workflows.
-  There is no human-review UI, background notification or streaming execution.
-- Stored history has no automatic retention/deletion policy, encryption or summaries.
-  Interrupted in-flight turns can wait for the ten-minute claim expiry; pending human
-  reviews have no automatic timeout. A lost HTTP response is not an idempotent retry.
-- TF-IDF retrieval can miss terminology; collected pages may lack a requested repair
-  procedure. An appropriate mixed request may interrupt when evidence is insufficient.
-  Web snippets can be stale. Prompt-level injection defenses are not a security proof.
-- Bounded orchestration makes up to six provider calls for a mixed request, plus a
-  separate call on human resume. Outages and quotas can prevent live checks from passing.
-- Customer data is synthetic, fixed and read-only. Auth is a demo boundary, and there
-  is no production readiness claim. Passing mocked tests does not prove live quality.
-
-See [DEMO.md](DEMO.md) for a walkthrough. Stop local containers with `docker compose down`.

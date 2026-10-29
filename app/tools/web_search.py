@@ -2,6 +2,7 @@ from ddgs import DDGS
 from pydantic import ValidationError
 
 from app.schemas import AppError, SearchResult
+from app.tools.web_pages import enrich_results
 
 
 def web_search(query: str, *, max_results: int = 5, timeout: float = 15) -> list[SearchResult]:
@@ -18,7 +19,7 @@ def web_search(query: str, *, max_results: int = 5, timeout: float = 15) -> list
                 ))
             except ValidationError:
                 continue
-        return validated[:max_results]
     except Exception as exc:
         # DDGS backends expose several engine-specific/network exceptions.
         raise AppError(502, "A busca DuckDuckGo está indisponível no momento.") from exc
+    return enrich_results(validated[:max_results], timeout=timeout)

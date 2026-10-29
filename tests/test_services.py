@@ -126,6 +126,7 @@ def test_empty_or_blocked_gemini_response(monkeypatch, text):
 
 
 def test_search_normalizes_results_and_uses_duckduckgo(monkeypatch):
+    monkeypatch.setattr("app.tools.web_search.enrich_results", lambda results, **kwargs: results)
     factory = MagicMock()
     factory.return_value.text.return_value = [
         {"title": "Result", "body": "Context", "href": "https://example.com/news"},

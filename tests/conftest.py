@@ -22,6 +22,7 @@ def block_live_services(monkeypatch):
 
     monkeypatch.setattr("app.services.gemini.genai.Client", forbidden)
     monkeypatch.setattr("app.tools.web_search.DDGS", forbidden)
+    monkeypatch.setattr("app.tools.web_pages.public_target", forbidden)
 
 
 @pytest.fixture
