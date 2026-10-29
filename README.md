@@ -1,277 +1,854 @@
-# AI Hardcore Engineer — Multi-Agent Support System
+# AI Hardcore Engineer — Getnet Multi-Agent Support
 
-Python 3.12 / FastAPI support API with Gemini, local Getnet RAG, synthetic customer tools,
-SQLite conversation memory and local human review. No external database or agent framework.
-User answers support Portuguese and English. This is a technical challenge demonstration.
+**Specialist intelligence, grounded answers and persistent conversations in one traceable support API.**
 
-The requirement-to-code/test mapping is in [SPEC.md](SPEC.md). Follow
-[MANUAL_TESTS.md](MANUAL_TESTS.md) to execute all ten original challenge questions, both
-customer tools, persistent memory, mixed synthesis and local human review. Current audit
-results are in [REQUIREMENTS_AUDIT.md](REQUIREMENTS_AUDIT.md); the earlier implementation
-report records a separate historical run.
+A Python 3.12 / FastAPI application that combines Gemini, official Getnet documentation,
+live web research and customer-specific tools. Each request follows an explicit workflow:
+validate the request, classify its safety, select specialists, retrieve evidence and
+persist the outcome. Portuguese and English answers share the same orchestration,
+conversation memory and source tracking.
 
-## Setup and Docker
+| Delivery | Implemented scope |
+| --- | --- |
+| **239 passing deterministic tests** | API contracts, orchestration, memory, isolation, retrieval, tools and review workflows |
+| **10 recorded conversations** | Complete requests and actual HTTP responses from the original challenge questions |
+| **17 evaluation scenarios** | Original questions, customer profile, guardrails and mixed specialist requests |
+| **4 agent roles** | Router, Knowledge, Customer Support and Human Escalation |
+| **3 routing strategies** | Official Getnet RAG, external web research and customer-specific support |
+| **2 customer tools** | Profile and activity records scoped to the requesting customer |
 
-Create `.env` only if it does not exist, then configure an available Gemini model and key:
+## Review the project without an API key
+
+Start with the [recorded execution](#recorded-execution--all-ten-original-questions):
+every response is included directly in this README, with the answer, executed agents,
+tools, sources, request ID and conversation state. The recording covers product
+comparison, weather, settlement dates, Pix, connectivity, receivables advance, exchange
+rates, transaction declines, crediário and Payment Link.
+
+Then inspect the [architecture](#architecture), the [engineering decisions](#engineering-decisions)
+and the [verification strategy](#verification-and-evaluation). The deterministic suite
+runs with external services mocked and credentials cleared:
 
 ```bash
-cp -n .env.example .env
-docker compose config --quiet
-docker compose up --build -d --force-recreate
-docker compose exec api python -m app.rag.ingest
-curl -fsS http://localhost:8000/health
-curl -fsS http://localhost:8000/ready
+docker compose build
+docker compose run --rm --no-deps -e GEMINI_API_KEY= api python -m pytest -q
 ```
 
-The existing `./data:/app/data` volume persists `data/rag/chunks.json` and
-`data/conversations.db` across container recreation. Do not commit either generated file.
-`.env` and SQLite files are excluded from the image build context. Never commit real keys.
-See `/docs` for the validated request/response schemas.
+Latest deterministic validation: **239 passed**. These tests exercise the application
+code through controlled provider, search and ingestion boundaries.
 
-For local Python: create a virtual environment, install `requirements.txt`, run
-`python -m app.rag.ingest`, then `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+## What makes the system stand out
+
+| Capability | Implementation | Practical value |
+| --- | --- | --- |
+| **Evidence-aware answers** | Separate public RAG, web retrieval and customer-data paths | Each question uses an appropriate information source |
+| **Typed agent decisions** | Pydantic schemas validate safety classifications, plans, tool choices and knowledge answers | Model decisions become explicit application contracts |
+| **Bounded specialist collaboration** | A validated plan runs one specialist or Support → Getnet Knowledge → Synthesis | Customer records and public guidance can form one coherent response |
+| **Bilingual retrieval** | English search terms expand into Portuguese Getnet terms; generation follows the user's language | English questions can use official Brazilian product documentation |
+| **Full-page web evidence** | Five search results, three concurrent downloads, page text and location/date metadata | Weather and currency answers receive the values behind the search snippets |
+| **Persistent human review** | SQLite stores interruption state, evidence and reviewer notes before resuming | Conversations retain context across container recreation |
+| **Conversation ownership** | User-scoped records, credential mapping and atomic turn claims | Context and tool access follow a concrete customer identity |
+| **Inspectable operations** | Request IDs, structured events, returned tools and source URLs | Reviewers can follow the executed path from HTTP request to answer |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    C[HTTP caller] --> I[Optional demo identity check]
-    I --> M[SQLite ownership check and bounded history]
-    M --> G[Guardrail]
-    G -->|supported| R[Validated bounded execution plan]
-    R -->|one specialist| K[Knowledge: Getnet RAG or web]
-    R -->|one specialist| S[Customer Support: local tools]
-    R -->|mixed step 1| MS[Customer Support]
-    MS -->|previous result and history| MK[Getnet Knowledge]
-    MK --> SY[Synthesis]
-    K --> F[Persist assistant answer]
-    S --> F
-    SY --> F
-    G -->|blocked or human requested| H[Persist pending handoff and interrupt]
-    R -->|failure| H
-    K -->|insufficient evidence or failure| H
-    S -->|insufficient records or failure| H
-    MS -->|failure| H
-    MK -->|failure| H
-    SY -->|failure| H
-    H --> HR[Local reviewer reply endpoint]
-    HR --> P[Persist human note]
-    P --> RE[Resume final answer using note and saved evidence]
-    RE --> F
+    C[HTTP caller / Swagger UI] --> I[Configurable identity check]
+    I --> M[SQLite ownership and conversation context]
+    M --> G[Guardrail: structured safety decision]
+    G -->|supported| R[Router: validated execution plan]
+    R -->|Getnet documentation or external research| K[Knowledge Agent]
+    R -->|customer-specific request| S[Customer Support Agent]
+    R -->|combined request| MX[Support → Getnet Knowledge → Synthesis]
+    K --> P[Persist answer, sources and evidence]
+    S --> P
+    MX --> P
+    G -->|review path| H[Human Escalation: persist interruption]
+    K -->|review path| H
+    S -->|review path| H
+    MX -->|review path| H
+    H --> HR[Reviewer reply endpoint]
+    HR --> N[Persist human note]
+    N --> RE[Resume using saved context and evidence]
+    RE --> P
+    P --> O[Structured ChatResponse]
 ```
 
-All provider calls, including optional judging, use `app/services/gemini.py`.
-Guardrail decisions, execution plans and tool selection use Pydantic JSON validation.
-Invalid routing fails closed into a persisted handoff. No private model reasoning is
-requested, returned or persisted.
+The Router selects the execution path. The Knowledge Agent retrieves public evidence.
+The Customer Support Agent selects customer tools. The Human Escalation Agent creates
+an explicit review state that the conversation store persists.
 
-## Memory and isolation
+A mixed plan runs `customer_support` followed by `knowledge_getnet`, then synthesizes
+the specialist outputs. The second specialist receives the first answer and its
+sources; synthesis preserves source URLs, record dates and the synthetic-data context.
+The plan contains at most two specialist steps, validates their order and prevents
+repeated specialists.
 
-`POST /chat` still requires `message` and `user_id`. `conversation_id` is optional:
+### Information paths
 
-- Omit it to create a UUID conversation associated with the supplied user.
-- Reuse it for a continuation. Missing and foreign conversations both return `404`.
-- User and assistant messages, human notes, operational metadata and retrieved/tool
-  evidence are persisted in SQLite. Evidence is excluded from HTTP responses.
-- Router, guardrail and specialists receive the last 12 messages, capped at 12,000
-  characters. Configure `HISTORY_MAX_MESSAGES` and `HISTORY_MAX_CHARS` in the environment.
-  The current message is supplied separately. Retrieval includes recent user messages
-  so short follow-ups such as “É a Smart” can refer to an earlier connection problem.
-- SQLite transactions claim a conversation while a turn runs. Overlapping requests
-  return `409`. Claims expire after ten minutes after a crashed worker; a replaced
-  worker cannot commit its old result. Network calls never hold SQLite transactions.
+| Route | Evidence pipeline | Main implementation |
+| --- | --- | --- |
+| `knowledge_getnet` | Official Getnet HTML → extracted text → chunks → TF-IDF/cosine retrieval → grounded generation | [knowledge.py](app/agents/knowledge.py), [ingest.py](app/rag/ingest.py), [retriever.py](app/rag/retriever.py) |
+| `knowledge_web` | DuckDuckGo results → bounded page downloads → extracted page content and metadata → grounded generation | [web_search.py](app/tools/web_search.py), [web_pages.py](app/tools/web_pages.py) |
+| `customer_support` | Validated tool selection → customer-scoped JSON records → contextual answer | [customer_support.py](app/agents/customer_support.py), [customer_data.py](app/tools/customer_data.py) |
+| Human review | Persisted request, phase, plan, completed steps and evidence → reviewer note → resumed answer | [conversations.py](app/conversations.py), [router.py](app/agents/router.py) |
 
-History is bounded for prompts; stored records are retained until removed by the local
-operator. Storage is local plaintext and requires appropriate host access controls.
+## Engineering decisions
 
-## Bounded orchestration and RAG
+### Explicit orchestration and a single provider boundary
 
-The plan contains `agents` and `needs_synthesis`. Valid plans are one of
-`knowledge_getnet`, `knowledge_web`, `customer_support`, or the two-step sequence
-`customer_support` → `knowledge_getnet` with synthesis. Plans cannot repeat specialists,
-exceed two steps or replan. A specialist interruption stops the remaining execution.
-The next specialist receives the earlier answer and sources; synthesis merges the
-answers, preserving uncertainty, synthetic-data disclaimers and source URLs.
-The public `route` remains the first route for compatibility; `agents_used` records
-all executed agents, including `synthesis` for a mixed request.
+Agent control flow is implemented directly in Python. All model calls pass through
+[Gemini](app/services/gemini.py), including safety classification, execution planning,
+tool selection, answer generation, synthesis, human-review resumption and optional
+answer judging. Provider configuration, timeouts and error translation have one
+integration point.
 
-RAG remains **HTML → BeautifulSoup → 180-word chunks / 30-word overlap → TF-IDF /
-cosine similarity → up to four chunks → Gemini**. Ingestion attempts up to 12 Getnet
-URLs (configurable up to 20), including Brazilian product pages and global pages.
-It extracts literal FAQ/technical-sheet widget text without executing JavaScript,
-expands common English search terms into Portuguese and preserves both product
-sources in comparisons. A total ingestion failure preserves the previous corpus.
-External questions use DuckDuckGo search followed by bounded HTML retrieval of the first
-five valid results, with at most three concurrent downloads. Each page has a six-second retrieval budget, at most
-three redirects, a 750 KB download limit and a 12,000-character extracted-text limit.
-The agent receives snippets, page text, location metadata, source URLs and available
-publication/download timestamps. Download time does not establish forecast or quote
-freshness: the answer still needs values for the requested date and location.
-Failed, blocked, oversized or non-HTML pages retain their search snippets; they do not
-discard successful sources. No JavaScript is executed. Public destinations are validated
-at every redirect and connections pin the validated IP while retaining TLS hostname
-verification. Private/local addresses, credentials in URLs and nonstandard ports are rejected.
-This adds no Gemini call, dependency or API key. Some sites require JavaScript or block
-automated reading, so insufficient evidence can still require local review.
-Retrieved text, tool results,
-history and human notes are explicitly treated as untrusted data in prompts.
+[Typed schemas](app/schemas.py) define the model/application boundary. The application
+validates structured JSON before executing a plan or selecting tools. Operational
+state captures the selected plan, phase, completed steps and retrieved evidence.
 
-Customer tools read `data/customers.json`, using the HTTP `user_id` directly; the LLM
-cannot select another customer. `cliente1988` contains fictional records with a fixed
-snapshot dated 2026-10-15. Tools never perform account, payment or device mutations.
+### Getnet RAG tuned to the product domain
 
-## Real local human review
+The ingestion pipeline starts from official product, service and FAQ URLs and collects
+up to 12 pages by default, configurable up to 20. BeautifulSoup extracts HTML content
+and literal FAQ/technical-sheet widget fields.
 
-Guardrail blocks, explicit requests for human support, insufficient context and provider
-failures create a local handoff. The response has `status=awaiting_human`,
-`requires_human=true`, `handoff_id` and `conversation_id`. Further chat turns in that
-conversation return `409` until review completes. Other conversations can continue.
+Text is split into **180-word chunks with 30-word overlap**. TF-IDF and cosine
+similarity rank the local corpus and return up to four chunks for generation. English
+query expansion connects terms such as product features and receivables advance to
+Portuguese documentation. Product comparisons preserve sources for both named
+terminals, while the agent prioritizes specific product documentation.
 
-`POST /handoffs/{handoff_id}/reply` accepts `{"response":"..."}` and an optional
-`user_id` ownership assertion. A reviewer can supply a note after restarting the app:
-the pending request, interruption phase, validated plan/completed step count and
-available tool/retrieval evidence are stored. The note is persisted **before** Gemini
-resumes finalization. On success the final answer is saved and the handoff becomes
-`resolved`; further replies return `409`. Unknown/foreign handoffs return `404`.
-After a generation failure it remains pending; retry the same note without duplicating
-the human message. Reviewer notes do not authorize unsafe actions or other-user access.
+The JSON corpus keeps the evidence inspectable. Ingestion writes a temporary file
+before replacing the active corpus, preserving a usable index throughout refreshes.
 
-Resume runs a bounded final-answer step with the saved evidence and human note; it
-does not restart completed tools, replan or run the interrupted remaining specialists.
-This is an actual local interrupt/resume workflow. No external operator is contacted,
-and no Slack, email or third-party ticket integration exists.
+### Web research that reads the evidence
 
-## HTTP examples
+The external knowledge path retrieves up to **five valid search results** and reads
+their pages with **three concurrent workers**. Per-page controls include a six-second
+retrieval budget, three redirects, a 750 KB download ceiling and 12,000 characters of
+extracted text.
 
-These examples use the default local demo mode. With demo authentication enabled, add
-`-H "X-API-Key: $DEMO_KEY"` to chat and `-H "X-Reviewer-Key: $REVIEW_KEY"` to human replies.
-Copy the actual IDs returned by the API into `CONVERSATION_ID` and `HANDOFF_ID`.
+Extraction preserves page text, image descriptions, headings, location breadcrumbs,
+coordinates and available publication metadata. A separate timestamp records retrieval
+time. The Knowledge Agent receives calendar dates and weekdays calculated in
+`America/Sao_Paulo`, with explicit instructions to associate forecast values with the
+requested day and location.
+
+Each destination is resolved and validated before connecting. Connections pin the
+validated public IP while retaining the original hostname for TLS verification.
+Redirect targets receive the same validation. Parallel enrichment uses the existing
+HTTP and HTML dependencies and adds **zero model calls** to the answer workflow.
+
+### Persistent memory with controlled context
+
+[ConversationStore](app/conversations.py) persists user/assistant messages, human notes,
+evidence and handoff state in SQLite. Conversation UUIDs are associated with the
+requesting `user_id`.
+
+The prompt receives the most recent **12 messages**, capped at **12,000 characters**,
+with both values configurable. Recent user messages also inform retrieval, allowing
+follow-ups such as “É a Smart” to refer to the earlier device discussion.
+
+Short SQLite transactions claim a conversation before execution and release it after
+the turn. Claims expire after ten minutes, and commit checks verify the active claim.
+Network and model calls run outside database transactions. This keeps state ownership
+explicit while the specialists retrieve and generate.
+
+### Customer tools with an explicit data contract
+
+`get_customer_profile` and `get_customer_activity` expose read-only customer records
+from [customers.json](data/customers.json). The HTTP request's authorized `user_id`
+selects the customer record; tool selection operates within that scope.
+
+The included `cliente1988` fixture has a **2026-10-15 snapshot**, with synthetic profile,
+terminal, sales and settlement records. This provides a reproducible customer scenario.
+Public RAG and web evidence retain their collected source URLs. The response field
+`data_mode: "synthetic"` identifies the customer-data fixture.
+
+### Human review as a persisted workflow
+
+Review creates an `awaiting_human` response with `requires_human`, `handoff_id` and
+`conversation_id`. The saved state includes the original request, interruption phase,
+validated plan, completed steps and available evidence.
+
+A reviewer posts a note to `POST /handoffs/{handoff_id}/reply`. The application persists
+the note before generation, resumes from the saved evidence and records the final
+answer. Pending handoffs survive process/container recreation; note handling preserves
+retry consistency. Other conversations can continue while one awaits review.
+
+### Identity and observability integrated into the API
+
+Configurable demo credentials map `X-API-Key` to the requesting customer and use a
+separate `X-Reviewer-Key` for review. Credential comparisons use UTF-8 bytes and
+`compare_digest`. Ownership checks return a consistent `404` for inaccessible
+conversation IDs, and overlapping conversation turns return `409`.
+
+Structured logs record operational events with a correlated `request_id`. Retrieved
+evidence is persisted internally for review and evaluation; public responses expose
+the answer, source URLs and executed tools/agents. Logging selects operational
+metadata, keeping messages, customer records and credentials out of log payloads.
+Prompts explicitly mark questions, history, pages, tool results and reviewer notes as
+untrusted data.
+
+## Recorded execution — all ten original questions
+
+The following conversations were captured on **October 29, 2026** and supplied from
+an actual API execution. The full response payloads are reproduced below, preserving
+their original answers, IDs, sources, HTTP status and review states. Dates and numeric
+values belong to that recorded execution.
+
+Every request in this recording uses `user_id: "cliente1988"` and creates a new
+conversation by omitting `conversation_id`. Expand a scenario to inspect its complete
+request and response. The records expose both automatic answers and persisted
+handoffs through the same API contract.
+
+| # | Scenario | Executed tool | Recorded state |
+| --- | --- | --- | --- |
+| 1 | Official product comparison | `getnet_rag` | `answered` |
+| 2 | Weather with date and location | `web_search` | `answered` |
+| 3 | Customer settlement schedule | `get_customer_activity` | `answered` |
+| 4 | Pix requirements and persisted review | `getnet_rag` | `awaiting_human` |
+| 5 | Customer terminal connectivity | `get_customer_activity` | `answered` |
+| 6 | Receivables advance | `getnet_rag` | `answered` |
+| 7 | Dated exchange-rate answer | `web_search` | `answered` |
+| 8 | Operational handoff persistence | — | `awaiting_human` |
+| 9 | Crediário installment conditions | `getnet_rag` | `answered` |
+| 10 | WhatsApp and Payment Link | `getnet_rag` | `answered` |
+
+<details>
+<summary><strong>1. What's the difference between the Get Clássica and the Get Smart?</strong></summary>
+
+Official product comparison.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "What's the difference between the Get Clássica and the Get Smart?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "The Get Clássica features up to 12 hours of battery life and a physical keypad (https://site.getnet.com.br/maquininha/get-classica/). In contrast, the Get Smart features a long-lasting battery and a touch keyboard (https://site.getnet.com.br/maquininha/get-smart/), and it is an intelligent card machine that allows you to control inventory, place orders, close bills, issue invoices, and integrate theterminal with your establishment's system directly on the machine (https://site.getnet.com.br/maquininha/get-smart/).",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "getnet_rag"
+  ],
+  "sources": [
+    "https://site.getnet.com.br/maquininha/get-classica/",
+    "https://site.getnet.com.br/maquininha/get-smart/"
+  ],
+  "request_id": "7a05ac30-d284-44cc-a971-879a7449b9ac",
+  "route": "knowledge_getnet",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "131430ed-abb1-4065-9e3f-1a4fab0baa39",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>2. What's the weather forecast in Porto Alegre tomorrow?</strong></summary>
+
+Weather with date and location.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "What's the weather forecast in Porto Alegre tomorrow?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "For tomorrow, Friday, October 30, 2026, the weather forecast for Porto Alegre is mostly cloudy with occasional rain, with a high of 23 °C and a low of 17 °C, and winds at around 20 km/h (https://www.meteoblue.com/en/weather/week/porto-alegre_brazil_3452925).",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "web_search"
+  ],
+  "sources": [
+    "https://www.easeweather.com/south-america/brazil/rio-grande-do-sul/porto-alegre/tomorrow",
+    "https://www.meteoblue.com/en/weather/week/porto-alegre_brazil_3391406?day=3",
+    "https://www.weather-atlas.com/en/brazil/porto-alegre-weather-tomorrow",
+    "https://www.weather-forecast.com/locations/Porto-Alegre/forecasts/latest",
+    "https://www.meteoblue.com/en/weather/week/porto-alegre_brazil_3452925"
+  ],
+  "request_id": "e6fcafdf-7082-4d73-9e16-fc6ef5578f7d",
+  "route": "knowledge_web",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "68c67eee-ebe3-4e2a-8745-c084a21506ed",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>3. When will the money from yesterday's sales be deposited?</strong></summary>
+
+Customer settlement schedule.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "When will the money from yesterday's sales be deposited?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "Please note that these records are fictional. \n\nBased on the snapshot data from October 15, 2026, the sales made on October 14, 2026 (referred to in your question) have the following expected deposit dates according to the system records:\n\n* **Sale ID demo-sale-001** (debit, net amount: 147.75BRL): The expected deposit date is **2026-10-15** (status: scheduled).\n* **Sale ID demo-sale-002** (credit, net amount: 291.00 BRL): The expected deposit date is **2026-11-13** (status: scheduled).\n\nPlease note that I cannot perform actions on accounts or devices, and this information reflects the expected dates from the records without guaranteeing an actual transfer time.",
+  "agents_used": [
+    "router",
+    "customer_support"
+  ],
+  "tools_used": [
+    "get_customer_activity"
+  ],
+  "sources": [],
+  "request_id": "ac56c6fe-a18a-4e55-b723-1c1f439b71ed",
+  "route": "customer_support",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "56f25925-e4e6-4e2c-9912-8df66d143cab",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>4. Do I need a bank account to receive my sales via Pix?</strong></summary>
+
+Pix requirements and persisted review.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "Do I need a bank account to receive my sales via Pix?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "I could not safely resolve this request. The conversation is awaiting local human review. No external support agent has been contacted.",
+  "agents_used": [
+    "router",
+    "knowledge",
+    "human_escalation"
+  ],
+  "tools_used": [
+    "getnet_rag"
+  ],
+  "sources": [
+    "https://site.getnet.com.br/duvidas/",
+    "https://site.getnet.com.br/get-ajuda-get-conta/o-que-e-a-get-conta/",
+    "https://site.getnet.com.br/pix/"
+  ],
+  "request_id": "570414ef-b11d-4938-bdcf-961bdf20327f",
+  "route": "knowledge_getnet",
+  "guardrail_category": "supported",
+  "status": "awaiting_human",
+  "escalation_reason": "insufficient_information",
+  "conversation_id": "e08d5740-ae1d-4e0e-8a3e-f3fdff41e642",
+  "requires_human": true,
+  "handoff_id": "45bca8ca-9c51-4d8f-9ab3-9753339a9263",
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>5. My card machine won't connect to the internet, what should I do?</strong></summary>
+
+Customer terminal connectivity.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "My card machine won't connect to the internet, what should I do?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "Please note that these records are fictional. \n\nRegarding your card machine (`demo-device-1988`, model: Get Smart), the tool data shows that the device status is currently **offline**, last seen on **2026-10-14 at 18:00:00-03:00**. The recorded connection type is **Wi-Fi**, and the last connection error is **\"Wi-Fi network unavailable\"**. \n\nPlease ensure your Wi-Fi network is working properly and that the card machine is within range and connected to the correct network. Note that I cannot perform actions on your device or account.\n\nAdditionally, based on your activity records (snapshot date: 2026-10-15), here are the expected deposit dates for your approved sales:\n- **2026-10-15:** Scheduled deposit of **147.75 BRL** (from sale `demo-sale-001`).\n- **2026-11-13:** Scheduled deposit of **291.00 BRL** (from sale `demo-sale-002`).\n\nPlease note that these are the expected dates from the records, and Icannot promise an actual transfer. No device diagnostics or transaction details beyond what is providedhere are available in the system.",
+  "agents_used": [
+    "router",
+    "customer_support"
+  ],
+  "tools_used": [
+    "get_customer_activity"
+  ],
+  "sources": [],
+  "request_id": "ba1d6184-60cf-4c7f-a931-0bc6eb039450",
+  "route": "customer_support",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "f40d4013-bda8-426a-a6cc-2cf1568f7a1e",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>6. How does receivables advance (antecipação) work with Getnet?</strong></summary>
+
+Receivables advance.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "How does receivables advance (antecipação) work with Getnet?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "Receivables advance (antecipação de recebíveis) with Getnet allows entrepreneurs to receive the money from credit card sales—whether made in cash or in installments—before the original compensation deadline. By paying a fee charged by the financial institution or operator, the merchant can access funds early instead of waiting for the scheduled future dates. Additionally, sales can be anticipated simply through the Getnet Brasil app, and automated advance conditions are also available depending on thechosen receipt plan. Sources: https://site.getnet.com.br/quando-vale-a-pena-antecipar-as-suas-vendas-no-cartao/, https://site.getnet.com.br/duvidas/",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "getnet_rag"
+  ],
+  "sources": [
+    "https://site.getnet.com.br/quando-vale-a-pena-antecipar-as-suas-vendas-no-cartao/",
+    "https://site.getnet.com.br/duvidas/"
+  ],
+  "request_id": "40cb9480-beb8-4dae-b76e-13739edfbf03",
+  "route": "knowledge_getnet",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "5fb21bbe-462f-4155-a471-91ce0c73707c",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>7. What's the euro exchange rate today?</strong></summary>
+
+Dated exchange-rate answer.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "What's the euro exchange rate today?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "The live euro exchange rate today is 1.1146 USD per 1 EUR (or 1 USD = 0.8971 EUR), with a live bid of 1.11464 and an ask of 1.11472 as of October 29, 2026. Source: https://www.live-rates.com/rates/eur-usd",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "web_search"
+  ],
+  "sources": [
+    "https://www.live-rates.com/rates/eur-usd",
+    "https://exchangerates.com/currencies/eur/",
+    "https://xrates.org/usd-to-eur",
+    "https://wise.com/us/currency-converter/live-exchange-rates",
+    "https://www.xe.com/currencyconverter/"
+  ],
+  "request_id": "0347498c-1479-4187-9c31-4345a569482b",
+  "route": "knowledge_web",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "00fbb3db-053f-4b1f-8cf8-919591b5a37f",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>8. My card machine is showing a transaction decline error.</strong></summary>
+
+Operational handoff persistence.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "My card machine is showing a transaction decline error.",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "I could not safely resolve this request. The conversation is awaiting local human review. No external support agent has been contacted.",
+  "agents_used": [
+    "human_escalation"
+  ],
+  "tools_used": [],
+  "sources": [],
+  "request_id": "c78bb3d4-e9d4-4aab-ac26-c245e00a2ec7",
+  "status": "awaiting_human",
+  "escalation_reason": "internal_error",
+  "conversation_id": "65d7d6ec-6846-4e5e-af38-c1d003f5068c",
+  "requires_human": true,
+  "handoff_id": "c0739656-fe8a-49e6-9aca-e083a566b7ee",
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>9. How many installments can I split a sale into with the crediário?</strong></summary>
+
+Crediário installment conditions.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "How many installments can I split a sale into with the crediário?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "You can split a sale into up to 48 installments using the crediário. Relevant condition: The maximum installment term and interest rates vary according to the card issuer's credit policies (https://site.getnet.com.br/crediario/, https://site.getnet.com.br/duvidas/).",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "getnet_rag"
+  ],
+  "sources": [
+    "https://site.getnet.com.br/duvidas/",
+    "https://site.getnet.com.br/crediario/"
+  ],
+  "request_id": "4225fb69-a1f0-41c3-a991-bf90b7b0f4da",
+  "route": "knowledge_getnet",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "9de07b65-dde5-4765-8b8c-2929df65da48",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+<details>
+<summary><strong>10. Can I sell through WhatsApp using the Payment Link?</strong></summary>
+
+WhatsApp and Payment Link.
+
+**Request — `POST /chat`**
+
+```json
+{
+  "message": "Can I sell through WhatsApp using the Payment Link?",
+  "user_id": "cliente1988"
+}
+```
+
+**Recorded response — HTTP 200**
+
+```json
+{
+  "answer": "Yes, you can sell through WhatsApp using the Payment Link solution. It is ideal for sales via WhatsApp, social media, remote billing, or for those who do not have their own website, allowing youto create, send, and receive payments with practicality and security (https://site.getnet.com.br/link-de-pagamento/).",
+  "agents_used": [
+    "router",
+    "knowledge"
+  ],
+  "tools_used": [
+    "getnet_rag"
+  ],
+  "sources": [
+    "https://site.getnet.com.br/link-de-pagamento/",
+    "https://site.getnet.com.br/duvidas/"
+  ],
+  "request_id": "d601155e-ebe8-4e1f-b557-23cb64ae07e6",
+  "route": "knowledge_getnet",
+  "guardrail_category": "supported",
+  "status": "answered",
+  "conversation_id": "6fcc6c0b-8fcc-4ba4-ae7f-e5dcba1be4f3",
+  "requires_human": false,
+  "data_mode": "synthetic"
+}
+```
+
+</details>
+
+## Run the application
+
+### Docker Compose
+
+Create the environment file while preserving an existing configuration:
 
 ```bash
-# First turn: save conversation_id from the response.
+cp -n .env.example .env
+```
+
+Set `GEMINI_API_KEY` in `.env` for live model execution. `GEMINI_MODEL` selects the
+provider model; the available settings are documented in [.env.example](.env.example).
+
+```bash
+docker compose config --quiet
+docker compose up --build -d --force-recreate
+docker compose exec -T api python -m app.rag.ingest
+curl -fsS http://localhost:8000/health
+curl -fsS http://localhost:8000/ready
+```
+
+Open **http://localhost:8000/docs** for the interactive API.
+
+The Compose volume `./data:/app/data` persists the RAG corpus and SQLite conversations
+across container recreation. Environment credentials and generated database files
+are excluded from the image build context and Git tracking.
+
+### Local Python
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp -n .env.example .env
+# Set GEMINI_API_KEY in .env for live model execution.
+.venv/bin/python -m app.rag.ingest
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Configuration
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | Live Gemini credential | Supplied through the environment |
+| `GEMINI_MODEL` | Gemini model identifier | `gemini-flash-latest` |
+| `GEMINI_TIMEOUT_SECONDS` | Model-call timeout | `30` |
+| `HTTP_TIMEOUT_SECONDS` | Search/ingestion HTTP timeout | `15` |
+| `DATA_DIR` | Corpus, customer records and conversation storage | Project `data/` |
+| `HISTORY_MAX_MESSAGES` | Recent messages supplied to agents | `12` |
+| `HISTORY_MAX_CHARS` | Conversation prompt character budget | `12000` |
+| `DEMO_API_KEYS` | JSON credential-to-customer mapping | `{}` |
+| `REVIEWER_API_KEY` | Separate local reviewer credential | Configured with identity mapping |
+
+## Exercise the workflows manually
+
+### Public knowledge and web research
+
+```bash
+curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Compare Get Clássica and Get Smart.","user_id":"cliente1988"}'
+
+curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Qual é a previsão do tempo em Porto Alegre, RS, amanhã?","user_id":"cliente1988"}'
+```
+
+Inspect `answer`, `route`, `agents_used`, `tools_used`, `sources` and
+`request_id`. Check the cited page against the named product, forecast date,
+location and units. The original ten questions are reproduced in the recording above.
+
+### Persistent conversation memory
+
+```bash
 curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
   -d '{"message":"Minha maquininha não conecta na internet.","user_id":"cliente1988"}'
 
-# Reuse that conversation_id.
+# Copy conversation_id from the response.
 CONVERSATION_ID='<returned UUID>'
 curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
   -d "{\"message\":\"É a Smart.\",\"user_id\":\"cliente1988\",\"conversation_id\":\"$CONVERSATION_ID\"}"
+```
 
-# Customer-specific records plus public troubleshooting knowledge.
+Check that the second turn reuses the conversation ID and understands the device
+reference. Recreate the container and continue with the same ID to exercise persistence.
+
+### Customer tools and specialist collaboration
+
+```bash
+# Customer profile: receiving configuration.
 curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
-  -d '{"message":"My Smart terminal is offline. Check my terminal information and tell me how to fix the connection.","user_id":"cliente1988"}'
+  -d '{"message":"What is my receiving configuration?","user_id":"cliente1988"}'
 
-# Interrupt; save handoff_id and conversation_id.
+# Customer activity: recorded sales and settlement dates.
+curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"message":"When are my recorded sales scheduled for deposit?","user_id":"cliente1988"}'
+
+# Mixed plan: customer records plus official product documentation.
+curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Check my terminal model and connection status, then compare Get Smart and Get Clássica using official product documentation.","user_id":"cliente1988"}'
+```
+
+Check `get_customer_profile` and `get_customer_activity` on the respective customer
+requests. On the mixed request, inspect the recorded `customer_support`, `knowledge`
+and `synthesis` agents, both tools and the official product source URLs.
+
+### Human interrupt and resume
+
+```bash
 curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
   -d '{"message":"Quero atendimento humano.","user_id":"cliente1988"}'
 
-# Local reviewer reply and resume.
+# Copy handoff_id from the response; conversation_id identifies the saved conversation.
 HANDOFF_ID='<returned UUID>'
-curl -sS "http://localhost:8000/handoffs/$HANDOFF_ID/reply" -H 'Content-Type: application/json' \
-  -d '{"response":"O registro fictício indica Get Smart offline no Wi-Fi. Oriente verificar a rede; nenhum ajuste remoto foi realizado."}'
+docker compose up -d --force-recreate
+
+curl -sS "http://localhost:8000/handoffs/$HANDOFF_ID/reply" \
+  -H 'Content-Type: application/json' \
+  -d '{"response":"O registro fictício indica Get Smart offline no Wi-Fi. Oriente verificar a disponibilidade da rede."}'
 ```
 
-## Identity boundary
+Inspect `awaiting_human`, the generated handoff ID and the resumed `answered`
+response. The final result retains the original conversation ID and adds
+`human_resume` to the executed agents.
 
-Default mode is an **unauthenticated local demo**. Ownership checks enforce supplied
-`user_id` isolation but do not prove who the caller is. To demonstrate that additional
-boundary, configure environment variables with your own synthetic credentials:
+### Configurable demo identity
+
+Configure customer and reviewer credentials in `.env`:
 
 ```dotenv
-DEMO_API_KEYS={"<local-customer-key>":"cliente1988","<other-local-key>":"synthetic-user-b"}
-REVIEWER_API_KEY=<separate-local-reviewer-key>
+DEMO_API_KEYS={"<customer-key>":"cliente1988","<second-customer-key>":"synthetic-user-b"}
+REVIEWER_API_KEY=<separate-reviewer-key>
 ```
 
-`X-API-Key` must match the supplied `user_id`: invalid/missing credentials return `401`,
-and identity mismatch returns `403` before history or customer tools are accessed.
-When the mapping is enabled, configuring a separate reviewer key is mandatory.
-`X-Reviewer-Key` authorizes the reviewer endpoint; customer keys cannot perform reviews.
-Reviewers intentionally have access across users. With no mapping/key configured the
-review endpoint is open for local demonstration. This is not production authentication.
+Recreate the API after configuration. Add `X-API-Key` to chat requests and
+`X-Reviewer-Key` to reviewer replies. Check authorized access, a customer/identity
+mismatch (`403`), an invalid credential (`401`) and cross-customer conversation
+access (`404`).
 
-## Tests, live evaluation and answer quality
+## Verification and evaluation
+
+The project combines deterministic regression checks, live workflow smoke tests,
+declarative evaluation cases and evidence-based model judging.
+
+| Layer | What it exercises | Entry point |
+| --- | --- | --- |
+| Deterministic tests | API/schema validation, routing, tools, isolation, history, atomic claims, review persistence, RAG and public-page retrieval | [tests/](tests/) |
+| Live smoke | Health, readiness, first turn, continuation, mixed specialists, human interrupt and resume | [evals/smoke.py](evals/smoke.py) |
+| Scenario evaluation | Expected route, agents, tools, guardrail, status, source URLs, language and answer concepts | [evals/cases.json](evals/cases.json), [evals/run.py](evals/run.py) |
+| Evidence-based judging | Groundedness, relevance, correctness and unsupported-claim checks against persisted evidence | [evals/quality.py](evals/quality.py) |
 
 ```bash
-# Deterministic, no network, credentials or actual Gemini calls.
-docker compose exec api python -m pytest -q
+# Credential-free deterministic suite.
+docker compose run --rm --no-deps -e GEMINI_API_KEY= api python -m pytest -q
 
-# Opt-in real HTTP/provider smoke: health, readiness, memory, mixed flow and HITL.
-docker compose exec api python -m evals.smoke
+# Live workflow smoke using the configured Gemini provider.
+docker compose exec -T api python -m evals.smoke
 
-# Live API evaluation: routing, tools, guardrails, sources and semantic constraints.
-docker compose exec api python -m evals.run
+# Seventeen declarative scenarios with spaced execution.
+docker compose exec -T api python -m evals.run --delay 20
 
-# Explicitly opt-in Gemini judge using the API's persisted evidence.
-docker compose exec api python -m evals.run --judge
+# Gemini judging against the API's persisted evidence.
+docker compose exec -T api python -m evals.run --judge --delay 20
 ```
 
-To retest web retrieval after a code change, rebuild the API and start a **new**
-conversation (omit `conversation_id`; an existing pending handoff remains pending):
+The **17 scenarios** include the original ten questions, customer profile, four
+guardrail cases and two mixed requests. Each declares its expected operational path
+and answer constraints. The smoke runner records all seven stages.
 
-```bash
-docker compose up --build -d --force-recreate
-curl -sS http://localhost:8000/chat -H 'Content-Type: application/json' \
-  -d '{"message":"What is the weather forecast for Porto Alegre, Rio Grande do Sul, Brazil tomorrow?","user_id":"cliente1988"}'
-```
+The optional Gemini judge uses the question, answer, actual persisted evidence and
+case constraints. It returns structured **1–5** scores for groundedness, relevance
+and correctness, together with unsupported-claim findings. Passing requires all three
+scores to be at least four and an empty unsupported-claims list.
 
-Also retry the original shorter Porto Alegre question, its Portuguese version and the
-euro exchange-rate question. Check `status=answered`, `requires_human=false`, nonempty
-`sources`, the correct city/date, units and consistency with the cited page. For currency,
-the answer must name the currency pair and distinguish an indicative quote from a bank's
-buy/sell rate. A page title alone is not enough evidence. Logs now include `pages_loaded`
-alongside the number of search results; page content remains internal evidence.
+Run judging in the API container so it reads the same conversation database. With
+demo identity configured, set `EVAL_API_KEY` to the evaluation customer's credential.
+The evaluation CLI returns `0` for a passing run, `1` for a failing run and `2`
+for invalid configuration.
 
-`evals/cases.json` contains 17 cases: the original ten, customer profile, four guardrail
-cases and two mixed support/knowledge requests (repair and product comparison).
-Cases declare required tools/routes/agents/sources and optional required concept groups,
-forbidden claim phrases, citation requirements and expected language. The deterministic
-checks validate those constraints; language checking uses a documented word-marker
-heuristic. These checks do not establish semantic correctness or entailment.
+## API and operational visibility
 
-`--judge` uses the already configured Gemini provider with the question, final answer,
-actual persisted retrieved evidence/tool outputs and expected constraints. It validates
-structured `groundedness`, `relevance`, `correctness` scores on a **1–5** scale,
-`unsupported_claims` and `pass`. Passing requires every score ≥4 and no unsupported
-claims. Malformed/inconsistent judge output fails the case. Missing evidence fails
-explicitly; no replacement evidence is fabricated. This mode selects cases expected to
-be answered; a runtime handoff still fails its case. Explicit guardrail/handoff cases
-remain in the normal evaluation. Run it against the same API
-data directory (as in the Compose command), not an unrelated remote instance.
+| Endpoint | Contract |
+| --- | --- |
+| `POST /chat` | Validated message, customer ID and optional conversation ID; returns the answer and execution metadata |
+| `POST /handoffs/{handoff_id}/reply` | Persists a reviewer note and resumes the saved conversation |
+| `GET /health` | Process liveness |
+| `GET /ready` | Checks SQLite access, the local RAG index and configured Gemini credentials |
+| `GET /docs` | Interactive OpenAPI documentation |
 
-Gemini evaluating Gemini is **not an independent assessment** and can repeat the
-generator's mistakes. Human review and an independently labeled dataset remain useful.
-Live evaluation consumes the configured provider quota, requires network/credentials
-and defaults to a 15-second pause between cases (`--delay 20` to increase it).
-Set `EVAL_API_KEY` for the evaluation customer's key when demo auth is enabled.
-The CLI exits `0` for all passing, `1` for failures and `2` for invalid configuration.
-Normal pytest blocks live Gemini, search and mocked ingestion downloads.
-The live smoke records all seven stages even if the API is unavailable or returns invalid
-JSON. Such stages fail explicitly; they are not silently skipped or counted as passing.
+`ChatResponse` exposes `answer`, `agents_used`, `tools_used`, `sources`,
+`request_id`, `route`, `guardrail_category`, `status`, `escalation_reason`,
+`conversation_id`, `requires_human`, `handoff_id` and `data_mode`.
 
-## Health, logs and API response
-
-`GET /health` reports process liveness only. `GET /ready` checks SQLite accessibility,
-loads/validates the local RAG index and checks whether Gemini credentials are
-configured. It returns `200` when those local prerequisites are ready, otherwise `503`.
-It reports Gemini connectivity as `not_checked`; it makes no provider call and does
-not claim provider health, quota availability or factual corpus completeness.
-
-Responses preserve `request_id`, `answer`, `agents_used`, `tools_used`, `sources`,
-`route`, `guardrail_category`, `status` and `escalation_reason`, adding
-`conversation_id`, `requires_human`, `handoff_id` and `data_mode=synthetic`.
-`data_mode` describes the demo customer records; public retrieval uses actual collected pages.
-`sources` describes supplied evidence; it is not proof that every generated claim
-is supported. `X-Request-ID` correlates HTTP responses with structured JSON logs.
-Logs contain only operational metadata, never full messages, records or credentials.
+The `X-Request-ID` response header correlates the HTTP exchange with structured logs.
+Web retrieval logs include both result count and `pages_loaded`, making search and
+page enrichment separately visible.
 
 ```bash
 docker compose logs --tail 100 api
 ```
 
-Provider errors become controlled handoffs; error logs identify stage/status such as
-`429` (quota), `503` (unavailable or missing prerequisite), `502` (provider/connectivity)
-or `504` (timeout). A failed reviewer generation returns the corresponding error while
-preserving the pending handoff and note. Validation returns `422`; unexpected internal
-failures return `500` and cannot guarantee persistence if local storage itself failed.
+## Repository guide
+
+| Path | Responsibility |
+| --- | --- |
+| [app/main.py](app/main.py) | FastAPI endpoints and dependency wiring |
+| [app/schemas.py](app/schemas.py) | HTTP, agent and tool contracts |
+| [app/agents/](app/agents/) | Routing, public knowledge, customer support and human escalation |
+| [app/guardrails/](app/guardrails/) | Structured request-safety classification |
+| [app/services/gemini.py](app/services/gemini.py) | Centralized model-provider integration |
+| [app/rag/](app/rag/) | Official-source ingestion and local retrieval |
+| [app/tools/](app/tools/) | Customer data, web search and public-page enrichment |
+| [app/conversations.py](app/conversations.py) | Durable messages, evidence, turn claims and review state |
+| [app/identity.py](app/identity.py) | Customer and reviewer credential checks |
+| [data/customers.json](data/customers.json) | Reproducible synthetic customer fixture |
+| [evals/](evals/) | Scenario catalog, smoke runner and answer-quality evaluation |
+| [tests/](tests/) | Deterministic regression suite |
+| [docker-compose.yml](docker-compose.yml) | Local API runtime and persistent data volume |
 
 
