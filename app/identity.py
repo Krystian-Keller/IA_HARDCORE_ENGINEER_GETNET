@@ -10,7 +10,7 @@ def authorize_user(settings: Settings, user_id: str, api_key: str | None) -> Non
     if not settings.demo_api_keys:
         return  # Explicit unauthenticated local demo mode.
     identity = next((user for key, user in settings.demo_api_keys.items()
-                     if compare_digest(key, api_key or "")), None)
+                     if compare_digest(key.encode("utf-8"), (api_key or "").encode("utf-8"))), None)
     if identity is None:
         raise AppError(401, "Credencial de demonstração inválida ou ausente.")
     if identity != user_id:
@@ -19,5 +19,5 @@ def authorize_user(settings: Settings, user_id: str, api_key: str | None) -> Non
 
 def authorize_reviewer(settings: Settings, api_key: str | None) -> None:
     key = settings.reviewer_api_key.get_secret_value()
-    if key and not compare_digest(key, api_key or ""):
+    if key and not compare_digest(key.encode("utf-8"), (api_key or "").encode("utf-8")):
         raise AppError(401, "Credencial de revisão inválida ou ausente.")

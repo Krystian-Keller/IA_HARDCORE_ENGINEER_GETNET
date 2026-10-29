@@ -334,5 +334,49 @@
         "I have reset your terminal"
       ]
     }
+  },
+  {
+    "name": "mixed_terminal_comparison",
+    "message": "Check my terminal model and connection status, then compare Get Smart and Get Clássica using official product documentation.",
+    "user_id": "cliente1988",
+    "expected_route": "customer_support",
+    "expected_tools": [
+      "get_customer_activity",
+      "getnet_rag"
+    ],
+    "expected_agents": [
+      "customer_support",
+      "knowledge",
+      "synthesis"
+    ],
+    "expected_sources": [
+      "https://site.getnet.com.br/maquininha/get-classica/",
+      "https://site.getnet.com.br/maquininha/get-smart/"
+    ],
+    "constraints": {
+      "required_concepts": [
+        [
+          "Smart"
+        ],
+        [
+          "Clássica",
+          "Classica"
+        ],
+        [
+          "offline"
+        ],
+        [
+          "fictional",
+          "synthetic",
+          "demo"
+        ]
+      ],
+      "expected_language": "en",
+      "require_citations": true,
+      "forbidden_claims": [
+        "I have reset your terminal",
+        "guaranteed repair"
+      ]
+    }
   }
 ]

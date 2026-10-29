@@ -6,13 +6,14 @@ from tests.conftest import SUPPORTED
 
 
 @pytest.mark.parametrize("key,user,status", [(None, "cliente1988",401), ("bad", "cliente1988",401),
+                                            ("inválida", "cliente1988",401),
                                             ("demo-a", "other",403)])
 def test_demo_identity_rejects_unauthorized_callers(client, router, gemini, key, user, status):
     from pydantic import SecretStr
     router.settings.demo_api_keys = {"demo-a":"cliente1988"}
     router.settings.reviewer_api_key = SecretStr("reviewer")
     response = client.post("/chat", json={"message":"My records", "user_id":user},
-                           headers={"X-API-Key":key} if key else {})
+                           headers={"X-API-Key":key.encode("utf-8")} if key else {})
     assert response.status_code == status
     gemini.generate.assert_not_called()
 
@@ -68,4 +69,14 @@ def test_unusable_database_is_reported_before_first_chat(client, router, setting
     response = client.get("/ready")
     assert response.status_code == 503
     assert response.json()["resources"]["conversation_database"] == "missing"
+    gemini.generate.assert_not_called()
+
+
+def test_non_ascii_reviewer_credential_returns_401_without_provider_access(client, router, gemini):
+    from pydantic import SecretStr
+    from uuid import uuid4
+    router.settings.reviewer_api_key = SecretStr("reviewer-demo")
+    response = client.post(f"/handoffs/{uuid4()}/reply", json={"response":"Note"},
+                           headers={"X-Reviewer-Key":"inválida".encode("utf-8")})
+    assert response.status_code == 401
     gemini.generate.assert_not_called()

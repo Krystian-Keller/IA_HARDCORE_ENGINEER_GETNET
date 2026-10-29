@@ -1,5 +1,8 @@
 # Implementation report — 2026-10-20
 
+This is a historical run. See [REQUIREMENTS_AUDIT.md](REQUIREMENTS_AUDIT.md) for the
+2026-10-28 audit, subsequent fixes and newly executed checks.
+
 ## A. Architecture changes
 
 Preserved FastAPI, Gemini, TF-IDF/cosine Getnet RAG, DuckDuckGo search, synthetic customer

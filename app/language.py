@@ -12,9 +12,11 @@ def answer_language(message: str, context: ConversationContext | None = None) ->
         candidates += [item.content for item in reversed(context.messages) if item.role == "user"]
     markers = {
         "Portuguese": {"qual", "quais", "como", "minha", "meu", "voce", "nao", "preciso",
-                       "quero", "maquininha", "recebimento", "conecta", "e", "a", "o", "para"},
+                       "quero", "maquininha", "recebimento", "conecta", "e", "o", "para"},
         "English": {"what", "when", "how", "my", "your", "you", "the", "does", "do", "can",
-                    "is", "are", "and", "check", "tell", "please", "need", "with"},
+                    "is", "are", "and", "check", "tell", "please", "need", "with",
+                    "human", "support", "weather", "forecast", "hello", "sales",
+                    "write", "give", "show", "reveal", "about"},
     }
     for candidate in candidates:
         text = "".join(c for c in unicodedata.normalize("NFKD", candidate.casefold())

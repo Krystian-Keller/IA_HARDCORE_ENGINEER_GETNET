@@ -2,6 +2,8 @@
 
 Use the existing `.env`; never display its contents or credentials during the demo.
 The commands below call Gemini only when explicitly noted. Readiness does not call it.
+The complete ten-question acceptance table and curl/Swagger walkthrough are in
+[MANUAL_TESTS.md](MANUAL_TESTS.md); requirement traceability is in [SPEC.md](SPEC.md).
 
 1. **Architecture and setup.** Show the README diagram, `app/agents/router.py`,
    `app/conversations.py` and `app/services/gemini.py`. Plans are validated, contain at
@@ -29,7 +31,10 @@ The commands below call Gemini only when explicitly noted. Readiness does not ca
    demonstrate persistence. The Router and specialist receive the first turn. Reusing
    the conversation with a different `user_id` must return `404`.
 
-5. **Mixed orchestration.** Ask “My Smart terminal is offline. Check my terminal
+5. **Mixed orchestration.** First ask “Check my terminal model and connection status,
+   then compare Get Smart and Get Clássica using official product documentation.” This
+   combines the fixed customer record with product facts available in the corpus.
+   Also ask “My Smart terminal is offline. Check my terminal
    information and tell me how to fix the connection.” Inspect `agents_used` for
    `customer_support`, `knowledge` and `synthesis`, with customer activity and Getnet RAG
    in `tools_used`. If live pages do not support troubleshooting, show the interruption

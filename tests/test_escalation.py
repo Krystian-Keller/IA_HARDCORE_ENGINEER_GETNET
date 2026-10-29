@@ -13,13 +13,35 @@ from tests.conftest import SUPPORTED
 @pytest.mark.parametrize("reason", get_args(EscalationReason))
 def test_human_escalation_is_deterministic(reason):
     first = HumanEscalationAgent.handle("Do not echo this private content", reason)
-    second = HumanEscalationAgent.handle("Different content", reason)
+    second = HumanEscalationAgent.handle("What about different content?", reason)
     assert first == second
     assert first.status == "escalated"
     assert first.escalation_reason == reason
     assert first.agents_used == ["human_escalation"]
     assert first.tools_used == []
-    assert "externo" in first.answer
+    assert "external" in first.answer
+    assert "private content" not in first.answer
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("Quero atendimento humano.", "revisão humana local"),
+    ("I need human support.", "local human review"),
+    ("What's the weather forecast tomorrow?", "local human review"),
+    ("Write a long fantasy poem about a dragon dancing on the moon.", "local human review"),
+])
+def test_interruption_message_supports_portuguese_and_english(message, expected):
+    result = HumanEscalationAgent.handle(message, "human_requested")
+    assert expected in result.answer
+
+
+def test_english_api_handoff_is_persisted_without_reaching_specialists(client, gemini, router):
+    gemini.generate.return_value = SUPPORTED
+    body = client.post("/chat", json={"message":"I need human support.", "user_id":"cliente1988"}).json()
+    assert body["status"] == "awaiting_human" and body["requires_human"]
+    assert "local human review" in body["answer"]
+    assert body["agents_used"] == ["human_escalation"]
+    assert router.store.history(body["conversation_id"], "cliente1988").messages[-1].content == body["answer"]
+    gemini.generate.assert_called_once()
 
 
 def test_escalation_keeps_executed_steps():

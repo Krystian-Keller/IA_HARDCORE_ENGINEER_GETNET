@@ -4,6 +4,12 @@ Python 3.12 / FastAPI support API with Gemini, local Getnet RAG, synthetic custo
 SQLite conversation memory and local human review. No external database or agent framework.
 User answers support Portuguese and English. This is a technical challenge demonstration.
 
+The requirement-to-code/test mapping is in [SPEC.md](SPEC.md). Follow
+[MANUAL_TESTS.md](MANUAL_TESTS.md) to execute all ten original challenge questions, both
+customer tools, persistent memory, mixed synthesis and local human review. Current audit
+results are in [REQUIREMENTS_AUDIT.md](REQUIREMENTS_AUDIT.md); the earlier implementation
+report records a separate historical run.
+
 ## Setup and Docker
 
 Create `.env` only if it does not exist, then configure an available Gemini model and key:
@@ -187,7 +193,8 @@ docker compose exec api python -m evals.run
 docker compose exec api python -m evals.run --judge
 ```
 
-`evals/cases.json` covers the original cases plus a mixed support/knowledge request.
+`evals/cases.json` contains 17 cases: the original ten, customer profile, four guardrail
+cases and two mixed support/knowledge requests (repair and product comparison).
 Cases declare required tools/routes/agents/sources and optional required concept groups,
 forbidden claim phrases, citation requirements and expected language. The deterministic
 checks validate those constraints; language checking uses a documented word-marker
@@ -198,8 +205,9 @@ actual persisted retrieved evidence/tool outputs and expected constraints. It va
 structured `groundedness`, `relevance`, `correctness` scores on a **1–5** scale,
 `unsupported_claims` and `pass`. Passing requires every score ≥4 and no unsupported
 claims. Malformed/inconsistent judge output fails the case. Missing evidence fails
-explicitly; no replacement evidence is fabricated. This mode evaluates answered cases;
-guardrail/handoff cases remain in the normal evaluation. Run it against the same API
+explicitly; no replacement evidence is fabricated. This mode selects cases expected to
+be answered; a runtime handoff still fails its case. Explicit guardrail/handoff cases
+remain in the normal evaluation. Run it against the same API
 data directory (as in the Compose command), not an unrelated remote instance.
 
 Gemini evaluating Gemini is **not an independent assessment** and can repeat the
@@ -209,6 +217,8 @@ and defaults to a 15-second pause between cases (`--delay 20` to increase it).
 Set `EVAL_API_KEY` for the evaluation customer's key when demo auth is enabled.
 The CLI exits `0` for all passing, `1` for failures and `2` for invalid configuration.
 Normal pytest blocks live Gemini, search and mocked ingestion downloads.
+The live smoke records all seven stages even if the API is unavailable or returns invalid
+JSON. Such stages fail explicitly; they are not silently skipped or counted as passing.
 
 ## Health, logs and API response
 

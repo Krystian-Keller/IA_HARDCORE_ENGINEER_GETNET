@@ -7,6 +7,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from evals.run import EvaluationCase, evaluate_case, run_evaluation
+from tests.conftest import ACCEPTANCE_CASES
 
 
 def test_case_catalog_covers_required_behaviors():
@@ -19,6 +20,11 @@ def test_case_catalog_covers_required_behaviors():
     }
     assert {case.expected_guardrail for case in cases} == {"supported", "sensitive", "unsafe", "irrelevant"}
     assert any(case.expected_status == "awaiting_human" for case in cases)
+    catalog = {case.message:case for case in cases}
+    for message, route in ACCEPTANCE_CASES:
+        assert catalog[message].expected_route == route
+    names = {case.name for case in cases}
+    assert {"mixed_smart_offline", "mixed_terminal_comparison"}.issubset(names)
 
 
 def test_evaluation_reports_pass_and_failure_without_grading_text(capsys):
